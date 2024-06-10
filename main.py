@@ -2,17 +2,20 @@ import os
 import random
 import socket
 import threading
+import wave
+from hashlib import sha256
 from math import ceil
 
-import wx
+from loguru import logger
 
+import wx
+import wx.lib.agw.genericmessagedialog as GMD
 from Crypto.Cipher import AES
 
-from tcp_by_size import send_with_size, recv_by_size
 import send_receive_encrypted
 import sound_manager
-
-from hashlib import sha256
+from tcp_by_size import send_with_size, recv_by_size
+import pyaudio
 
 HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
 PORT = 2525  # Port to listen on (non-privileged ports are > 1023)
@@ -26,6 +29,13 @@ Username = "mr know all"
 
 target_sound_file = "sound_recording.wav"
 recording_file = "recording.wav"
+
+rec = True
+
+
+def stop_record():
+    global rec
+    rec = False
 
 
 class LoginDialog(wx.Dialog):
@@ -76,7 +86,8 @@ class LoginDialog(wx.Dialog):
         data = recv_by_size(server_socket).decode("utf-8")
         if data == "Username and password match":
             Username = username
-            wx.MessageBox("Username and password match", "Login Information", wx.OK | wx.ICON_INFORMATION)
+            GMD.GenericMessageDialog(None, "Username and password match", "Login Information",
+                                     wx.OK | wx.ICON_INFORMATION)
             self.Hide()
             post_login_dialog = RecordSound(self)
             post_login_dialog.ShowModal()
@@ -93,47 +104,59 @@ class LoginDialog(wx.Dialog):
         self.Show()
 
 
-def send_file_(code, current, file_length, content):
+def send_sound_(code, current, file_length, content):
     msg = code + "~" + Username + "~" + str((1 if current == file_length else 0)) + "~"
     to_send = convert_with_length_prefix(msg)
     message_plus_content = bytearray()
     message_plus_content.extend(to_send)
     message_plus_content.extend(content)
     send_with_size(server_socket, message_plus_content)
-    response = recv_by_size(server_socket).decode("utf-8")
+    recv_by_size(server_socket).decode("utf-8")
 
 
-def send_file(file_path, code):
+def send_sound(file_path, code):
     current = 0
     file_length = os.stat(file_path).st_size
-    contents = bytearray()  # Use bytearray for efficient resizing
-    with open(target_sound_file, "rb") as f:
+    with open(file_path, "rb") as f:
         while current < file_length:
-            size = 10000
-            if (file_length - current >= size):
+            size = 40000
+            if file_length - current >= size:
                 current += size
             else:
                 size = file_length - current
                 current = file_length
-            send_file_(code, current, file_length, f.read(size))
+            send_sound_(code, current, file_length, f.read(size))
 
 
-def send_recording_(code, content):
-    msg = code + "~" + Username + "~"
-    to_send = convert_with_length_prefix(msg)
-    message_plus_content = bytearray()
-    message_plus_content.extend(to_send)
-    message_plus_content.extend(content)
-    send_with_size(server_socket, message_plus_content)
-    return recv_by_size(server_socket).decode("utf-8")
+def save_sound(file_path, sound_name):
+    send_sound(file_path, "SaveRecord" + "~" + sound_name)
+
+
+# def send_recording_(code, content):
+#     msg = code + "~" + Username + "~"
+#     to_send = convert_with_length_prefix(msg)
+#     message_plus_content = bytearray()
+#     message_plus_content.extend(to_send)
+#     message_plus_content.extend(content)
+#     send_with_size(server_socket, message_plus_content)
+#     return recv_by_size(server_socket).decode("utf-8")
 
 
 def send_recording(file_path, code):
-    current = 0
-    file_length = os.stat(file_path).st_size
-    contents = bytearray()  # Use bytearray for efficient resizing
-    with open(target_sound_file, "rb") as f:
-        return send_recording_(code, f.read(file_length))
+    while(rec):
+        sound_manager.record_to_file(file_path)
+        send_sound(file_path, code)
+
+
+def send_selection(sound_name):
+    logger.info("User's selection {}", sound_name)
+    msg = "ShortRecordExist" + "~" + Username + "~" + sound_name + "~"
+    to_send = convert_with_length_prefix(msg)
+    # message_plus_content = bytearray()
+    # message_plus_content.extend(to_send)
+    send_with_size(server_socket, to_send)
+    recv_by_size(server_socket).decode("utf-8")
+
 
 class RecordSound(wx.Dialog):
     def __init__(self, parent):
@@ -145,26 +168,104 @@ class RecordSound(wx.Dialog):
         # Record and Next buttons
         record_button = wx.Button(self, label="Record")
         next_button = wx.Button(self, label="Next")
+        save_button = wx.Button(self, label="Save")
+        play_button = wx.Button(self, label="Play")
+
         main_sizer.Add(record_button, 0, wx.ALL | wx.CENTER, 10)
         main_sizer.Add(next_button, 0, wx.ALL | wx.CENTER, 10)
+        main_sizer.Add(save_button, 0, wx.ALL | wx.CENTER, 10)
+        main_sizer.Add(play_button, 0, wx.ALL | wx.CENTER, 10)
+
+        # Create a spinner (choice control) with a default value
+        self.spinner = wx.Choice(self, choices=["default"])
+        main_sizer.Add(self.spinner, 0, wx.ALL | wx.CENTER, 10)
 
         # Set main sizer and show dialog
         self.SetSizer(main_sizer)
         self.Bind(wx.EVT_BUTTON, self.on_record, record_button)  # Bind record button press event
         self.Bind(wx.EVT_BUTTON, self.on_next, next_button)  # Bind next button press event
+        self.Bind(wx.EVT_BUTTON, self.on_save, save_button)  # Bind save button press event
+        self.Bind(wx.EVT_BUTTON, self.on_play, play_button)  # Bind play button press event
+
+        # Call method to initialize spinner values when the dialog is created
+        self.initialize_spinner()
+
+    def initialize_spinner(self):
+        values = self.get_sounds()
+        # Add values to the spinner, keeping "default" as the first item
+        self.spinner.SetItems(["default"] + values)
+        self.spinner.SetSelection(0)  # Set default selection to "default"
+
+    def get_sounds(self):
+        msg = "GetSoundsNames" + "~" + Username + "~"
+        to_send = convert_with_length_prefix(msg)
+        # message_plus_content = bytearray()
+        # message_plus_content.extend(to_send)
+        send_with_size(server_socket, to_send)
+        value_in_string = recv_by_size(server_socket).decode("utf-8")
+
+        # Split the string by "~" and filter out empty strings
+        sounds = value_in_string.split("~")
+        saved_recording_names = [sound for sound in sounds if sound]
+
+        return saved_recording_names
+
+    def on_save(self, event):
+        # Handle save button press
+        text_dialog = wx.TextEntryDialog(self, "Enter text:", "Save Recording")
+        if text_dialog.ShowModal() == wx.ID_OK:
+            entered_text = text_dialog.GetValue()
+            if entered_text not in self.spinner.GetItems():
+                save_sound(target_sound_file, entered_text)
+                self.spinner.Append(entered_text)
+            else:
+                wx.MessageBox(f"Entry already exists in spinner: {entered_text}", "Info", wx.OK | wx.ICON_INFORMATION)
+        text_dialog.Destroy()
+
+    def on_play(self, event):
+        # Handle play button press
+        # define stream chunk
+        chunk = 1024
+
+        # open a wav format music
+        f = wave.open(target_sound_file, "rb")
+        # instantiate PyAudio
+        p = pyaudio.PyAudio()
+        # open stream
+        stream = p.open(format=p.get_format_from_width(f.getsampwidth()),
+                        channels=f.getnchannels(),
+                        rate=f.getframerate(),
+                        output=True)
+        # read data
+        data = f.readframes(chunk)
+
+        # play stream
+        while data:
+            stream.write(data)
+            data = f.readframes(chunk)
+
+            # stop stream
+        stream.stop_stream()
+        stream.close()
+
+        # close PyAudio
+        p.terminate()
 
     def on_record(self, event):
         sound_manager.record_sound(target_sound_file)
-        send_file(target_sound_file, "ShortRecordSave")
         wx.MessageBox("Sound captured", "Info", wx.OK | wx.ICON_INFORMATION)
+
+    def on_next(self, event):
+        # wx.MessageBox("Next button pressed", "Info", wx.OK | wx.ICON_INFORMATION)
+        if self.spinner.GetStringSelection() == "default":
+            send_sound(target_sound_file, "ShortRecordSave")
+        else:
+            send_selection(self.spinner.GetStringSelection())
         self.Hide()
         counter = Counter(self)
         counter.ShowModal()
         counter.Destroy()
         self.Show()
-
-    def on_next(self, event):
-        wx.MessageBox("Next button pressed", "Info", wx.OK | wx.ICON_INFORMATION)
 
 
 class Counter(wx.Dialog):
@@ -195,18 +296,19 @@ class Counter(wx.Dialog):
             self.recording = True
             self.stop_button.Enable()
             self.record_button.Disable()
-            self.recording_thread = threading.Thread(target=sound_manager.record_audio)
+            self.recording_thread = threading.Thread(target=send_recording, args=(recording_file, "LongRecordPy"))
             self.recording_thread.start()
-
 
     def on_stop(self, event):
         if self.recording:
             sound_manager.stop_record()
+            stop_record()
+            # self.recording_thread.join()  # Wait for recording thread to finish
+            print("Stopped recording")
             self.recording = False
             self.record_button.Enable()
             self.stop_button.Disable()
-            occourrences = send_file(target_sound_file, "LongRecord")
-            wx.MessageBox(occourrences, "Info", wx.OK | wx.ICON_INFORMATION)
+            wx.MessageBox("Stopped recording", "Info", wx.OK | wx.ICON_INFORMATION)
 
 
 class SignupDialog(wx.Dialog):
@@ -304,15 +406,20 @@ def convert_with_length_prefix(text):
 
 
 def main():
+    # sound_manager.record_to_file_with_key(recording_file, 'q')
     global server_socket
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.connect((HOST, PORT))
-        set_encryption(s)
-        server_socket = s
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 
-        app = wx.App()
-        LoginDialog()
-        app.MainLoop()
+            s.connect((HOST, PORT))
+            set_encryption(s)
+            server_socket = s
+
+            app = wx.App()
+            LoginDialog()
+            app.MainLoop()
+    except (ConnectionRefusedError, OSError) as e:
+        print("Connection refused")
 
         # text = "Hello World!"
         #

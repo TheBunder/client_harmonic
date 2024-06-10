@@ -1,3 +1,4 @@
+import time
 from struct import pack
 from sys import byteorder
 import librosa
@@ -13,6 +14,7 @@ RATE = 44100
 THRESHOLD = 500
 CHUNK_SIZE = 1024
 rec = False
+
 
 def stop_record():
     global rec
@@ -50,6 +52,7 @@ def count_similar_sounds(target_audio_path, recording_path, similarity_threshold
     except Exception as e:
         return 0  # Return 0 in case of an exception
 
+
 def record():
     """
     Record from the microphone and
@@ -62,8 +65,8 @@ def record():
     """
     p = pyaudio.PyAudio()
     stream = p.open(format=FORMAT, channels=1, rate=RATE,
-        input=True, output=True,
-        frames_per_buffer=CHUNK_SIZE)
+                    input=True, output=True,
+                    frames_per_buffer=CHUNK_SIZE)
 
     num_silent = 0
     snd_started = False
@@ -97,28 +100,32 @@ def record():
     r = add_silence(r, 0.5)
     return sample_width, r
 
+
 def is_silent(snd_data):
     "Returns 'True' if below the 'silent' threshold"
     return max(snd_data) < THRESHOLD
 
+
 def normalize(snd_data):
     "Average the volume out"
     MAXIMUM = 16384
-    times = float(MAXIMUM)/max(abs(i) for i in snd_data)
+    times = float(MAXIMUM) / max(abs(i) for i in snd_data)
 
     r = array('h')
     for i in snd_data:
-        r.append(int(i*times))
+        r.append(int(i * times))
     return r
+
 
 def trim(snd_data):
     "Trim the blank spots at the start and end"
+
     def _trim(snd_data):
         snd_started = False
         r = array('h')
 
         for i in snd_data:
-            if not snd_started and abs(i)>THRESHOLD:
+            if not snd_started and abs(i) > THRESHOLD:
                 snd_started = True
                 r.append(i)
 
@@ -135,6 +142,7 @@ def trim(snd_data):
     snd_data.reverse()
     return snd_data
 
+
 def add_silence(snd_data, seconds):
     "Add silence to the start and end of 'snd_data' of length 'seconds' (float)"
     silence = [0] * int(seconds * RATE)
@@ -143,10 +151,11 @@ def add_silence(snd_data, seconds):
     r.extend(silence)
     return r
 
+
 def record_sound(path):
     "Records from the microphone and outputs the resulting data to 'path'"
     sample_width, data = record()
-    data = pack('<' + ('h'*len(data)), *data)
+    data = pack('<' + ('h' * len(data)), *data)
 
     wf = wave.open(path, 'wb')
     wf.setnchannels(1)
@@ -154,6 +163,7 @@ def record_sound(path):
     wf.setframerate(44100)
     wf.writeframes(data)
     wf.close()
+
 
 def record_with_key_stop(key_to_stop):
     """
@@ -184,6 +194,7 @@ def record_with_key_stop(key_to_stop):
 
     return sample_width, r
 
+
 def record_with_val_stop():
     """
     Record audio from the microphone and stop when a specific key is pressed.
@@ -196,12 +207,16 @@ def record_with_val_stop():
                     frames_per_buffer=CHUNK_SIZE)
 
     r = array('h')
-    rec = True
-    while rec:
+    start_time = time.time()
+    print(start_time)
+    elapsed_time = 0
+    while elapsed_time < 4:
         snd_data = array('h', stream.read(CHUNK_SIZE))
         if byteorder == 'big':
             snd_data.byteswap()
         r.extend(snd_data)
+
+        elapsed_time = time.time() - start_time
 
     sample_width = p.get_sample_size(FORMAT)
     stream.stop_stream()
@@ -213,10 +228,11 @@ def record_with_val_stop():
 
     return sample_width, r
 
-def record_to_file(path, key_to_stop):
-    "Records from the microphone and outputs the resulting data to 'path'"
+
+def record_to_file_with_key(path, key_to_stop):
+    """Records from the microphone and outputs the resulting data to 'path'"""
     sample_width, data = record_with_key_stop(key_to_stop)
-    data = pack('<' + ('h'*len(data)), *data)
+    data = pack('<' + ('h' * len(data)), *data)
 
     wf = wave.open(path, 'wb')
     wf.setnchannels(1)
@@ -226,3 +242,34 @@ def record_to_file(path, key_to_stop):
     wf.close()
 
 
+def record_to_file(path):
+    """Records from the microphone and outputs the resulting data to 'path'"""
+    sample_width, data = record_with_val_stop()
+    data = pack('<' + ('h' * len(data)), *data)
+
+    wf = wave.open(path, 'wb')
+    wf.setnchannels(1)
+    wf.setsampwidth(sample_width)
+    wf.setframerate(RATE)
+    wf.writeframes(data)
+    wf.close()
+
+
+def main():
+    target_sound_file = "demo_sound.wav"
+    recording_file = "demo_record.wav"
+    similarity_threshold = 0.7
+
+    # recourd the sound
+    record_sound('demo_sound.wav')
+
+    print("the sound has been record")
+
+    # Record audio until the 'Q' key is pressed
+    key_to_stop_recording = 'q'
+    record_to_file_with_key('demo_record.wav', key_to_stop_recording)
+
+    print(count_similar_sounds(target_sound_file, recording_file, similarity_threshold))
+
+if __name__ == '__main__':
+    main()
