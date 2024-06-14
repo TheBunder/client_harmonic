@@ -1,13 +1,13 @@
 import time
 from struct import pack
 from sys import byteorder
-import librosa
+# import librosa
 import wave
 import pyaudio
 from array import array
-import numpy as np
-import keyboard
-import noisereduce as nr
+# import numpy as np
+# import keyboard
+# import noisereduce as nr
 
 FORMAT = pyaudio.paInt16
 RATE = 44100
@@ -21,36 +21,36 @@ def stop_record():
     rec = False
 
 
-def count_similar_sounds(target_audio_path, recording_path, similarity_threshold):
-    try:
-        # Load the target sound and recording
-        target_audio, target_audio_sr = librosa.load(target_audio_path, sr=None)  # Load the target audio file
-        reduced_noise_sound = nr.reduce_noise(y=target_audio, sr=int(target_audio_sr))
-        recorded_audio, recorded_audio_sr = librosa.load(recording_path, sr=None)  # Load the recording audio file
-        reduced_noise_recorded = nr.reduce_noise(y=recorded_audio, sr=int(recorded_audio_sr))
-        # Initialize a count variable to track the number of occurrences
-        count = 0
-
-        # Iterate over the recording
-        for i in range(len(reduced_noise_recorded) - len(reduced_noise_sound)):
-            audio_segment = reduced_noise_recorded[
-                            i: i + len(reduced_noise_sound)
-                            ]  # Extract a segment of audio
-
-            # Calculate the similarity score between the audio segment and the target audio
-            similarity_score = np.dot(audio_segment, reduced_noise_sound) / (
-                    np.linalg.norm(audio_segment) * np.linalg.norm(reduced_noise_sound)
-            )
-
-            # Check if the similarity score exceeds the threshold
-            if similarity_score >= similarity_threshold:
-                count += 1  # Increment the count if similarity score is above threshold
-
-        # Return the total number of occurrences
-        return count
-
-    except Exception as e:
-        return 0  # Return 0 in case of an exception
+# def count_similar_sounds(target_audio_path, recording_path, similarity_threshold):
+#     try:
+#         # Load the target sound and recording
+#         target_audio, target_audio_sr = librosa.load(target_audio_path, sr=None)  # Load the target audio file
+#         reduced_noise_sound = nr.reduce_noise(y=target_audio, sr=int(target_audio_sr))
+#         recorded_audio, recorded_audio_sr = librosa.load(recording_path, sr=None)  # Load the recording audio file
+#         reduced_noise_recorded = nr.reduce_noise(y=recorded_audio, sr=int(recorded_audio_sr))
+#         # Initialize a count variable to track the number of occurrences
+#         count = 0
+#
+#         # Iterate over the recording
+#         for i in range(len(reduced_noise_recorded) - len(reduced_noise_sound)):
+#             audio_segment = reduced_noise_recorded[
+#                             i: i + len(reduced_noise_sound)
+#                             ]  # Extract a segment of audio
+#
+#             # Calculate the similarity score between the audio segment and the target audio
+#             similarity_score = np.dot(audio_segment, reduced_noise_sound) / (
+#                     np.linalg.norm(audio_segment) * np.linalg.norm(reduced_noise_sound)
+#             )
+#
+#             # Check if the similarity score exceeds the threshold
+#             if similarity_score >= similarity_threshold:
+#                 count += 1  # Increment the count if similarity score is above threshold
+#
+#         # Return the total number of occurrences
+#         return count
+#
+#     except Exception as e:
+#         return 0  # Return 0 in case of an exception
 
 
 def record():
@@ -165,41 +165,39 @@ def record_sound(path):
     wf.close()
 
 
-def record_with_key_stop(key_to_stop):
-    """
-    Record audio from the microphone and stop when a specific key is pressed.
-
-    This function records audio until the specified key is pressed on the keyboard.
-    """
-    p = pyaudio.PyAudio()
-    stream = p.open(format=FORMAT, channels=1, rate=RATE,
-                    input=True, output=True,
-                    frames_per_buffer=CHUNK_SIZE)
-
-    r = array('h')
-
-    while not keyboard.is_pressed(key_to_stop):
-        snd_data = array('h', stream.read(CHUNK_SIZE))
-        if byteorder == 'big':
-            snd_data.byteswap()
-        r.extend(snd_data)
-
-    sample_width = p.get_sample_size(FORMAT)
-    stream.stop_stream()
-    stream.close()
-    p.terminate()
-
-    r = normalize(r)
-    r = trim(r)
-
-    return sample_width, r
+# def record_with_key_stop(key_to_stop):
+#     """
+#     Record audio from the microphone and stop when a specific key is pressed.
+#
+#     This function records audio until the specified key is pressed on the keyboard.
+#     """
+#     p = pyaudio.PyAudio()
+#     stream = p.open(format=FORMAT, channels=1, rate=RATE,
+#                     input=True, output=True,
+#                     frames_per_buffer=CHUNK_SIZE)
+#
+#     r = array('h')
+#
+#     while not keyboard.is_pressed(key_to_stop):
+#         snd_data = array('h', stream.read(CHUNK_SIZE))
+#         if byteorder == 'big':
+#             snd_data.byteswap()
+#         r.extend(snd_data)
+#
+#     sample_width = p.get_sample_size(FORMAT)
+#     stream.stop_stream()
+#     stream.close()
+#     p.terminate()
+#
+#     r = normalize(r)
+#     r = trim(r)
+#
+#     return sample_width, r
 
 
 def record_with_val_stop():
     """
-    Record audio from the microphone and stop when a specific key is pressed.
-
-    This function records audio until the specified key is pressed on the keyboard.
+    Record audio from the microphone and stop when a specific time has passed or a value has changed.
     """
     p = pyaudio.PyAudio()
     stream = p.open(format=FORMAT, channels=1, rate=RATE,
@@ -210,7 +208,7 @@ def record_with_val_stop():
     start_time = time.time()
     print(start_time)
     elapsed_time = 0
-    while elapsed_time < 4:
+    while elapsed_time < 4 and rec:
         snd_data = array('h', stream.read(CHUNK_SIZE))
         if byteorder == 'big':
             snd_data.byteswap()
@@ -229,17 +227,17 @@ def record_with_val_stop():
     return sample_width, r
 
 
-def record_to_file_with_key(path, key_to_stop):
-    """Records from the microphone and outputs the resulting data to 'path'"""
-    sample_width, data = record_with_key_stop(key_to_stop)
-    data = pack('<' + ('h' * len(data)), *data)
-
-    wf = wave.open(path, 'wb')
-    wf.setnchannels(1)
-    wf.setsampwidth(sample_width)
-    wf.setframerate(RATE)
-    wf.writeframes(data)
-    wf.close()
+# def record_to_file_with_key(path, key_to_stop):
+#     """Records from the microphone and outputs the resulting data to 'path'"""
+#     sample_width, data = record_with_key_stop(key_to_stop)
+#     data = pack('<' + ('h' * len(data)), *data)
+#
+#     wf = wave.open(path, 'wb')
+#     wf.setnchannels(1)
+#     wf.setsampwidth(sample_width)
+#     wf.setframerate(RATE)
+#     wf.writeframes(data)
+#     wf.close()
 
 
 def record_to_file(path):
@@ -261,15 +259,15 @@ def main():
     similarity_threshold = 0.7
 
     # recourd the sound
-    record_sound('demo_sound.wav')
+    # record_sound('demo_sound.wav')
 
     print("the sound has been record")
 
     # Record audio until the 'Q' key is pressed
     key_to_stop_recording = 'q'
-    record_to_file_with_key('demo_record.wav', key_to_stop_recording)
+    # record_to_file_with_key('demo_record.wav', key_to_stop_recording)
 
-    print(count_similar_sounds(target_sound_file, recording_file, similarity_threshold))
+    # print(count_similar_sounds(target_sound_file, recording_file, similarity_threshold))
 
 if __name__ == '__main__':
     main()

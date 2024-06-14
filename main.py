@@ -1,36 +1,36 @@
 import os
-import random
 import socket
 import threading
 import wave
-from hashlib import sha256
-from math import ceil
+
 
 from loguru import logger
 
 import wx
 import wx.lib.agw.genericmessagedialog as GMD
-from Crypto.Cipher import AES
 
 import send_receive_encrypted
 import sound_manager
 from tcp_by_size import send_with_size, recv_by_size
 import pyaudio
 
+import re
+
 HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
 PORT = 2525  # Port to listen on (non-privileged ports are > 1023)
 server_socket = ''
 
-# Encryption variables
-is_encrypted = False
-iv_parms = ''
-aes_key = ''
+
 Username = "mr know all"
 
 target_sound_file = "sound_recording.wav"
 recording_file = "recording.wav"
 
 rec = True
+
+occurrences = 0
+
+MINIMUM_PASSWORD_LENGTH = 6
 
 
 def stop_record():
@@ -47,9 +47,9 @@ class LoginDialog(wx.Dialog):
         input_sizer = wx.BoxSizer(wx.VERTICAL)
 
         # Username label and text box
-        email_label = wx.StaticText(self, label="Username:")
+        username_label = wx.StaticText(self, label="Username:")
         self.username_text = wx.TextCtrl(self)  # Store as instance variable
-        input_sizer.Add(email_label, 0, wx.ALL, 5)
+        input_sizer.Add(username_label, 0, wx.ALL, 5)
         input_sizer.Add(self.username_text, 0, wx.EXPAND | wx.ALL, 5)
 
         # Password label and text box
@@ -80,21 +80,24 @@ class LoginDialog(wx.Dialog):
         global Username
         username = self.username_text.GetValue()
         password = self.password_text.GetValue()
-        message = "Login~" + username + "~" + password
-        to_send = convert_with_length_prefix(message)
-        send_receive_encrypted.send_encrypted(server_socket, to_send, aes_key, iv_parms)
-        data = recv_by_size(server_socket).decode("utf-8")
-        if data == "Username and password match":
-            Username = username
-            GMD.GenericMessageDialog(None, "Username and password match", "Login Information",
-                                     wx.OK | wx.ICON_INFORMATION)
-            self.Hide()
-            post_login_dialog = RecordSound(self)
-            post_login_dialog.ShowModal()
-            post_login_dialog.Destroy()
-            self.Show()
+        if not (password == "" or username == ""):
+            message = "Login~" + username + "~" + password
+            to_send = convert_with_length_prefix(message)
+            send_receive_encrypted.send_encrypted(server_socket, to_send)
+            data = recv_by_size(server_socket).decode("utf-8")
+            if data == "Username and password match":
+                Username = username
+                GMD.GenericMessageDialog(None, "Username and password match", "Login Information",
+                                         wx.OK | wx.ICON_INFORMATION)
+                self.Hide()
+                post_login_dialog = RecordSound(self)
+                post_login_dialog.ShowModal()
+                post_login_dialog.Destroy()
+                self.Show()
+            else:
+                wx.MessageBox("Invalid username and password", "Login Information", wx.OK | wx.ICON_INFORMATION)
         else:
-            wx.MessageBox("Invalid username and password", "Login Information", wx.OK | wx.ICON_INFORMATION)
+            wx.MessageBox("Please enter all the fields as mentioned", "Login Information", wx.OK | wx.ICON_INFORMATION)
 
     def on_signup(self, event):
         self.Hide()
@@ -111,12 +114,13 @@ def send_sound_(code, current, file_length, content):
     message_plus_content.extend(to_send)
     message_plus_content.extend(content)
     send_with_size(server_socket, message_plus_content)
-    recv_by_size(server_socket).decode("utf-8")
+    return recv_by_size(server_socket).decode("utf-8")
 
 
 def send_sound(file_path, code):
     current = 0
     file_length = os.stat(file_path).st_size
+    global occurrences
     with open(file_path, "rb") as f:
         while current < file_length:
             size = 40000
@@ -125,27 +129,20 @@ def send_sound(file_path, code):
             else:
                 size = file_length - current
                 current = file_length
-            send_sound_(code, current, file_length, f.read(size))
+            message = send_sound_(code, current, file_length, f.read(size))
+            if "Number" in message:
+                occurrences += int(message.split(" ")[3])
 
 
 def save_sound(file_path, sound_name):
     send_sound(file_path, "SaveRecord" + "~" + sound_name)
 
 
-# def send_recording_(code, content):
-#     msg = code + "~" + Username + "~"
-#     to_send = convert_with_length_prefix(msg)
-#     message_plus_content = bytearray()
-#     message_plus_content.extend(to_send)
-#     message_plus_content.extend(content)
-#     send_with_size(server_socket, message_plus_content)
-#     return recv_by_size(server_socket).decode("utf-8")
-
-
-def send_recording(file_path, code):
-    while(rec):
+def send_recording(file_path, code, text: wx.StaticText):
+    while (rec):
         sound_manager.record_to_file(file_path)
         send_sound(file_path, code)
+        text.SetLabel("Number of occurrences: " + str(occurrences))
 
 
 def send_selection(sound_name):
@@ -160,7 +157,7 @@ def send_selection(sound_name):
 
 class RecordSound(wx.Dialog):
     def __init__(self, parent):
-        super().__init__(parent, title="Sound Recording")
+        super().__init__(parent, title="Sound Recording", size=(400, 350))
 
         # Create sizers for layout
         main_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -168,13 +165,15 @@ class RecordSound(wx.Dialog):
         # Record and Next buttons
         record_button = wx.Button(self, label="Record")
         next_button = wx.Button(self, label="Next")
-        save_button = wx.Button(self, label="Save")
         play_button = wx.Button(self, label="Play")
+        optional_text = wx.StaticText(self, label="optional:")
+        save_button = wx.Button(self, label="Save")
 
         main_sizer.Add(record_button, 0, wx.ALL | wx.CENTER, 10)
         main_sizer.Add(next_button, 0, wx.ALL | wx.CENTER, 10)
-        main_sizer.Add(save_button, 0, wx.ALL | wx.CENTER, 10)
         main_sizer.Add(play_button, 0, wx.ALL | wx.CENTER, 10)
+        main_sizer.Add(optional_text, 0, wx.ALL | wx.CENTER, 10)
+        main_sizer.Add(save_button, 0, wx.ALL | wx.CENTER, 10)
 
         # Create a spinner (choice control) with a default value
         self.spinner = wx.Choice(self, choices=["default"])
@@ -184,8 +183,8 @@ class RecordSound(wx.Dialog):
         self.SetSizer(main_sizer)
         self.Bind(wx.EVT_BUTTON, self.on_record, record_button)  # Bind record button press event
         self.Bind(wx.EVT_BUTTON, self.on_next, next_button)  # Bind next button press event
-        self.Bind(wx.EVT_BUTTON, self.on_save, save_button)  # Bind save button press event
         self.Bind(wx.EVT_BUTTON, self.on_play, play_button)  # Bind play button press event
+        self.Bind(wx.EVT_BUTTON, self.on_save, save_button)  # Bind save button press event
 
         # Call method to initialize spinner values when the dialog is created
         self.initialize_spinner()
@@ -270,24 +269,34 @@ class RecordSound(wx.Dialog):
 
 class Counter(wx.Dialog):
     def __init__(self, parent):
-        super().__init__(parent, title="occurrence counter")
+        super().__init__(parent, title="occurrence counter", size=(400, 200))
 
         self.recording = False
         self.recording_thread = None
 
         # Create sizers for layout
         main_sizer = wx.BoxSizer(wx.VERTICAL)
+        panel = wx.Panel(self)
+        panel_sizer = wx.BoxSizer(wx.VERTICAL)
 
         # Record and Next buttons
-        self.record_button = wx.Button(self, label="Record")
-        self.stop_button = wx.Button(self, label="Stop")
+        self.record_button = wx.Button(panel, label="Record")
+        self.stop_button = wx.Button(panel, label="Stop")
         self.stop_button.Disable()  # Initially disable stop button
 
-        main_sizer.Add(self.record_button, 0, wx.ALL | wx.CENTER, 10)
-        main_sizer.Add(self.stop_button, 0, wx.ALL | wx.CENTER, 10)
+        self.text_ctrl = wx.StaticText(panel, label="Number of occurrences: 0", pos=(10, 10))
+
+        panel_sizer.Add(self.record_button, 0, wx.ALL | wx.CENTER, 10)
+        panel_sizer.Add(self.stop_button, 0, wx.ALL | wx.CENTER, 10)
+        panel_sizer.Add(self.text_ctrl, 0, wx.ALL | wx.CENTER, 10)
+
+        panel.SetSizer(panel_sizer)
+        main_sizer.Add(panel, 1, wx.EXPAND | wx.ALL, 10)
 
         # Set main sizer and show dialog
         self.SetSizer(main_sizer)
+        self.Fit()
+
         self.Bind(wx.EVT_BUTTON, self.on_record, self.record_button)  # Bind record button press event
         self.Bind(wx.EVT_BUTTON, self.on_stop, self.stop_button)  # Bind stop button press event
 
@@ -296,14 +305,14 @@ class Counter(wx.Dialog):
             self.recording = True
             self.stop_button.Enable()
             self.record_button.Disable()
-            self.recording_thread = threading.Thread(target=send_recording, args=(recording_file, "LongRecordPy"))
+            self.recording_thread = threading.Thread(target=send_recording,
+                                                     args=(recording_file, "LongRecordPy", self.text_ctrl))
             self.recording_thread.start()
 
     def on_stop(self, event):
         if self.recording:
             sound_manager.stop_record()
             stop_record()
-            # self.recording_thread.join()  # Wait for recording thread to finish
             print("Stopped recording")
             self.recording = False
             self.record_button.Enable()
@@ -313,16 +322,16 @@ class Counter(wx.Dialog):
 
 class SignupDialog(wx.Dialog):
     def __init__(self, parent):
-        super().__init__(parent, title="Sign Up")
+        super().__init__(parent, title="Sign Up", size=(400, 300))
 
         # Create sizers for layout
         main_sizer = wx.BoxSizer(wx.VERTICAL)
         input_sizer = wx.BoxSizer(wx.VERTICAL)
 
         # Username label and text box
-        email_label = wx.StaticText(self, label="Username:")
+        username_label = wx.StaticText(self, label="Username:")
         self.username_text = wx.TextCtrl(self)  # Store as instance variable
-        input_sizer.Add(email_label, 0, wx.ALL, 5)
+        input_sizer.Add(username_label, 0, wx.ALL, 5)
         input_sizer.Add(self.username_text, 0, wx.EXPAND | wx.ALL, 5)
 
         # Password label and text box
@@ -330,6 +339,12 @@ class SignupDialog(wx.Dialog):
         self.password_text = wx.TextCtrl(self, style=wx.TE_PASSWORD)  # Store as instance variable
         input_sizer.Add(password_label, 0, wx.ALL, 5)
         input_sizer.Add(self.password_text, 0, wx.EXPAND | wx.ALL, 5)
+
+        # Password label and text box
+        repassword_label = wx.StaticText(self, label="Confirm Password:")
+        self.repassword_text = wx.TextCtrl(self, style=wx.TE_PASSWORD)  # Store as instance variable
+        input_sizer.Add(repassword_label, 0, wx.ALL, 5)
+        input_sizer.Add(self.repassword_text, 0, wx.EXPAND | wx.ALL, 5)
 
         # Signup button
         signup_button = wx.Button(self, label="Sign Up")
@@ -343,46 +358,42 @@ class SignupDialog(wx.Dialog):
     def on_signup(self, event):
         username = self.username_text.GetValue()
         password = self.password_text.GetValue()
-        message = "SignUp~" + username + "~" + password
-        to_send = convert_with_length_prefix(message)
-        send_receive_encrypted.send_encrypted(server_socket, to_send, aes_key, iv_parms)
-        data = recv_by_size(server_socket).decode("utf-8")
-        if data == "Sign up successful":
-            wx.MessageBox("Registered successfully", "Login Information", wx.OK | wx.ICON_INFORMATION)
+        repassword = self.repassword_text.GetValue()
+        if not (password == "" or username == "" or repassword == ""):
+            if re.search("[^0-9a-zA-Z]+", username) == username:
+                if password == repassword:
+                    if len(password) >= MINIMUM_PASSWORD_LENGTH:
+                        message = signUp(username, password)
+                        if message == "Sign up successful":
+                            wx.MessageBox("Registered successfully", "Login Information", wx.OK | wx.ICON_INFORMATION)
+                        elif message == "Username is in use":
+                            wx.MessageBox("Username is already taken", "Login Information", wx.OK | wx.ICON_INFORMATION)
+                        else:
+                            wx.MessageBox("Registration failed", "Login Information", wx.OK | wx.ICON_INFORMATION)
+                        self.EndModal(wx.ID_OK)
+                    else:
+                        wx.MessageBox("Password must be at least " + str(MINIMUM_PASSWORD_LENGTH) + " characters long",
+                                      "Login Information",
+                                      wx.OK | wx.ICON_INFORMATION)
+                else:
+                    wx.MessageBox("Password not matching", "Login Information",
+                                  wx.OK | wx.ICON_INFORMATION)
+            else:
+                wx.MessageBox("Username can only contain numbers and letters", "Login Information",
+                              wx.OK | wx.ICON_INFORMATION)
         else:
-            wx.MessageBox("Username is in use", "Login Information", wx.OK | wx.ICON_INFORMATION)
-        self.EndModal(wx.ID_OK)
+            wx.MessageBox("Please enter all the fields", "Login Information",
+                          wx.OK | wx.ICON_INFORMATION)
 
 
-def set_encryption(sock):
-    global is_encrypted
-    global iv_parms
-    global aes_key
-    if not is_encrypted:
-        data = b'Please talk with my secretly'
-        send_with_size(sock, data)
-        DPH_srv_key = recv_by_size(sock).decode()
+def signUp(username, password):
+    message = "SignUp~" + username + "~" + password
+    to_send = convert_with_length_prefix(message)
+    send_receive_encrypted.send_encrypted(server_socket, to_send)
+    return recv_by_size(server_socket).decode("utf-8")
 
-        parts = DPH_srv_key.split("|")
-        srv_public_key = int(parts[0])
-        g = int(parts[1])
-        p = int(parts[2])
 
-        client_private_key = random.getrandbits(2048)
-        client_public_key = pow(g, client_private_key, p)
 
-        send_with_size(sock, client_public_key.to_bytes(ceil(client_public_key.bit_length() / 8.0)))
-        # key_size = (16, 24, 32)
-        SharedKey = pow(srv_public_key, client_private_key, p)
-        secret_key = sha256(str(SharedKey).encode()).digest()[:16]
-
-        aes_key = secret_key
-        cipherEncryption = AES.new(secret_key, AES.MODE_CBC)
-        send_with_size(sock, cipherEncryption.IV)
-
-        iv_parms = cipherEncryption.IV  # AES.new(secret_key, AES.MODE_CBC, aes_key.IV).IV
-
-        is_encrypted = True
 
 
 def convert_with_length_prefix(text):
@@ -412,7 +423,7 @@ def main():
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 
             s.connect((HOST, PORT))
-            set_encryption(s)
+            send_receive_encrypted.set_encryption(s)
             server_socket = s
 
             app = wx.App()
