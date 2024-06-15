@@ -3,7 +3,6 @@ import socket
 import threading
 import wave
 
-
 from loguru import logger
 
 import wx
@@ -19,7 +18,6 @@ import re
 HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
 PORT = 2525  # Port to listen on (non-privileged ports are > 1023)
 server_socket = ''
-
 
 Username = "mr know all"
 
@@ -149,8 +147,6 @@ def send_selection(sound_name):
     logger.info("User's selection {}", sound_name)
     msg = "ShortRecordExist" + "~" + Username + "~" + sound_name + "~"
     to_send = convert_with_length_prefix(msg)
-    # message_plus_content = bytearray()
-    # message_plus_content.extend(to_send)
     send_with_size(server_socket, to_send)
     recv_by_size(server_socket).decode("utf-8")
 
@@ -198,8 +194,6 @@ class RecordSound(wx.Dialog):
     def get_sounds(self):
         msg = "GetSoundsNames" + "~" + Username + "~"
         to_send = convert_with_length_prefix(msg)
-        # message_plus_content = bytearray()
-        # message_plus_content.extend(to_send)
         send_with_size(server_socket, to_send)
         value_in_string = recv_by_size(server_socket).decode("utf-8")
 
@@ -255,7 +249,6 @@ class RecordSound(wx.Dialog):
         wx.MessageBox("Sound captured", "Info", wx.OK | wx.ICON_INFORMATION)
 
     def on_next(self, event):
-        # wx.MessageBox("Next button pressed", "Info", wx.OK | wx.ICON_INFORMATION)
         if self.spinner.GetStringSelection() == "default":
             send_sound(target_sound_file, "ShortRecordSave")
         else:
@@ -393,9 +386,6 @@ def signUp(username, password):
     return recv_by_size(server_socket).decode("utf-8")
 
 
-
-
-
 def convert_with_length_prefix(text):
     """Converts text to bytes and prepends the length as a single byte.
 
@@ -417,7 +407,6 @@ def convert_with_length_prefix(text):
 
 
 def main():
-    # sound_manager.record_to_file_with_key(recording_file, 'q')
     global server_socket
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -431,11 +420,6 @@ def main():
             app.MainLoop()
     except (ConnectionRefusedError, OSError) as e:
         print("Connection refused")
-
-        # text = "Hello World!"
-        #
-        # send_receive_encrypted.send_encrypted(s, convert_with_length_prefix(text), aes_key, iv_parms)
-        # data = s.recv(1024)
 
 
 if __name__ == '__main__':

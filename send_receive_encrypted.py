@@ -16,12 +16,6 @@ iv_parms = ''
 aes_key = ''
 
 
-# def send_encrypted(sock, client_addr, to_send):
-#     encrypt_cipher = AES.new(
-#         CLIENTS_AES_INFO[client_addr][0], AES.MODE_CBC, CLIENTS_AES_INFO[client_addr][1]
-#     )
-#     to_send = encrypt_cipher.encrypt(pad(to_send, AES.block_size))
-#     tcp_by_size.send_with_size(sock, b64encode(to_send))
 
 def send_encrypted(sock, ba):
     cipher = AES.new(aes_key, AES.MODE_CBC, iv_parms)
@@ -62,14 +56,3 @@ def set_encryption(sock):
 
         is_encrypted = True
 
-# async def recv_decrypted(sock, client_addr):
-#     decrypt_cipher = AES.new(
-#         CLIENTS_AES_INFO[client_addr][0], AES.MODE_CBC, CLIENTS_AES_INFO[client_addr][1]
-#     )
-#     received = await tcp_by_size.recv_by_size(sock)
-#     if received == b"":
-#         return b""
-#     original_data = unpad(
-#         decrypt_cipher.decrypt(b64decode(received)), AES.block_size
-#     )  # .decode().strip())  # Decrypt and then up-pad the result
-#     return original_data
