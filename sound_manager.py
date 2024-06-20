@@ -9,7 +9,7 @@ FORMAT = pyaudio.paInt16
 RATE = 44100
 THRESHOLD = 500
 CHUNK_SIZE = 1024
-rec = False
+rec = True
 
 
 def stop_record():

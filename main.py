@@ -36,6 +36,11 @@ def stop_record():
     rec = False
 
 
+def start_record():
+    global rec
+    rec = True
+
+
 class LoginDialog(wx.Dialog):
     def __init__(self):
         super().__init__(None, title="Login")
@@ -115,32 +120,39 @@ def send_sound_(code, current, file_length, content):
     return recv_by_size(server_socket).decode("utf-8")
 
 
-def send_sound(file_path, code):
+def send_sound(file_path, code, error_text: wx.StaticText):
     current = 0
-    file_length = os.stat(file_path).st_size
     global occurrences
-    with open(file_path, "rb") as f:
-        while current < file_length:
-            size = 40000
-            if file_length - current >= size:
-                current += size
-            else:
-                size = file_length - current
-                current = file_length
-            message = send_sound_(code, current, file_length, f.read(size))
-            if "Number" in message:
-                occurrences += int(message.split(" ")[3])
+    if os.path.exists(target_sound_file):
+        try:
+            error_text.SetLabel("")
+            file_length = os.stat(file_path).st_size
+            with open(file_path, "rb") as f:
+                while current < file_length:
+                    size = 40000
+                    if file_length - current >= size:
+                        current += size
+                    else:
+                        size = file_length - current
+                        current = file_length
+                    message = send_sound_(code, current, file_length, f.read(size))
+                    if "Number" in message:
+                        occurrences += int(message.split(" ")[3])
+        except:
+            error_text.SetLabel("Error happened when tried to send the sound")
+    else:
+        error_text.SetLabel("Error: The recorded file does not exist")
 
 
-def save_sound(file_path, sound_name):
-    send_sound(file_path, "SaveRecord" + "~" + sound_name)
+def save_sound(file_path, sound_name, error_text: wx.StaticText):
+    send_sound(file_path, "SaveRecord" + "~" + sound_name, error_text)
 
 
-def send_recording(file_path, code, text: wx.StaticText):
+def send_recording(file_path, code, occurrences_text: wx.StaticText, error_text: wx.StaticText):
     while (rec):
         sound_manager.record_to_file(file_path)
-        send_sound(file_path, code)
-        text.SetLabel("Number of occurrences: " + str(occurrences))
+        send_sound(file_path, code, error_text)
+        occurrences_text.SetLabel("Number of occurrences: " + str(occurrences))
 
 
 def send_selection(sound_name):
@@ -165,6 +177,10 @@ class RecordSound(wx.Dialog):
         optional_text = wx.StaticText(self, label="optional:")
         save_button = wx.Button(self, label="Save")
 
+        self.error_text = wx.StaticText(self, label="", pos=(10, 10), style=wx.ST_NO_AUTORESIZE)
+        self.error_text.SetForegroundColour((255, 0, 0))  # set text color
+        self.error_text.SetMinSize((200, -1))  # Set minimum width, adjust height as needed
+
         main_sizer.Add(record_button, 0, wx.ALL | wx.CENTER, 10)
         main_sizer.Add(next_button, 0, wx.ALL | wx.CENTER, 10)
         main_sizer.Add(play_button, 0, wx.ALL | wx.CENTER, 10)
@@ -175,6 +191,11 @@ class RecordSound(wx.Dialog):
         self.spinner = wx.Choice(self, choices=["default"])
         main_sizer.Add(self.spinner, 0, wx.ALL | wx.CENTER, 10)
 
+        # Add error text and set main sizer
+        main_sizer.Add(self.error_text, 0, wx.ALL | wx.CENTER, 10)
+
+        self.SetSizer(main_sizer)
+
         # Set main sizer and show dialog
         self.SetSizer(main_sizer)
         self.Bind(wx.EVT_BUTTON, self.on_record, record_button)  # Bind record button press event
@@ -184,6 +205,8 @@ class RecordSound(wx.Dialog):
 
         # Call method to initialize spinner values when the dialog is created
         self.initialize_spinner()
+
+        self.recorded = False
 
     def initialize_spinner(self):
         values = self.get_sounds()
@@ -209,7 +232,7 @@ class RecordSound(wx.Dialog):
         if text_dialog.ShowModal() == wx.ID_OK:
             entered_text = text_dialog.GetValue()
             if entered_text not in self.spinner.GetItems():
-                save_sound(target_sound_file, entered_text)
+                save_sound(target_sound_file, entered_text, self.error_text)
                 self.spinner.Append(entered_text)
             else:
                 wx.MessageBox(f"Entry already exists in spinner: {entered_text}", "Info", wx.OK | wx.ICON_INFORMATION)
@@ -237,7 +260,7 @@ class RecordSound(wx.Dialog):
             stream.write(data)
             data = f.readframes(chunk)
 
-            # stop stream
+        # stop stream
         stream.stop_stream()
         stream.close()
 
@@ -245,19 +268,33 @@ class RecordSound(wx.Dialog):
         p.terminate()
 
     def on_record(self, event):
+        self.error_text.SetLabel("")
         sound_manager.record_sound(target_sound_file)
         wx.MessageBox("Sound captured", "Info", wx.OK | wx.ICON_INFORMATION)
+        self.recorded = True
 
     def on_next(self, event):
+        is_ok = self.recorded  # set to True if the user recorded a sound
         if self.spinner.GetStringSelection() == "default":
-            send_sound(target_sound_file, "ShortRecordSave")
+            if self.recorded:
+                send_sound(target_sound_file, "ShortRecordSave", self.error_text)
+                is_ok = os.path.exists(target_sound_file)
+                self.Layout()
+            else:
+                wx.MessageBox("Please record a sound before moving to the next screen", "Info",
+                              wx.OK | wx.ICON_INFORMATION)
         else:
-            send_selection(self.spinner.GetStringSelection())
-        self.Hide()
-        counter = Counter(self)
-        counter.ShowModal()
-        counter.Destroy()
-        self.Show()
+            try:
+                send_selection(self.spinner.GetStringSelection())
+            except:
+                wx.MessageBox("Error happened when tried to send selection", "Info",
+                              wx.OK | wx.ICON_INFORMATION)
+        if is_ok:
+            self.Hide()
+            counter = Counter(self)
+            counter.ShowModal()
+            counter.Destroy()
+            self.Show()
 
 
 class Counter(wx.Dialog):
@@ -277,11 +314,15 @@ class Counter(wx.Dialog):
         self.stop_button = wx.Button(panel, label="Stop")
         self.stop_button.Disable()  # Initially disable stop button
 
-        self.text_ctrl = wx.StaticText(panel, label="Number of occurrences: 0", pos=(10, 10))
+        self.text_ctrl = wx.StaticText(panel, label="Number of occurrences: 0", pos=(10, 10), style=wx.ST_NO_AUTORESIZE)
+        self.error_text = wx.StaticText(self, label="", pos=(10, 10), style=wx.ST_NO_AUTORESIZE)
+        self.error_text.SetForegroundColour((255, 0, 0))  # set text color
+        self.error_text.SetMinSize((200, -1))  # Set minimum width, adjust height as needed
 
         panel_sizer.Add(self.record_button, 0, wx.ALL | wx.CENTER, 10)
         panel_sizer.Add(self.stop_button, 0, wx.ALL | wx.CENTER, 10)
         panel_sizer.Add(self.text_ctrl, 0, wx.ALL | wx.CENTER, 10)
+        main_sizer.Add(self.error_text, 0, wx.ALL | wx.CENTER, 10)
 
         panel.SetSizer(panel_sizer)
         main_sizer.Add(panel, 1, wx.EXPAND | wx.ALL, 10)
@@ -295,11 +336,15 @@ class Counter(wx.Dialog):
 
     def on_record(self, event):
         if not self.recording:
+            self.error_text.SetLabel("")
             self.recording = True
+            start_record()
             self.stop_button.Enable()
             self.record_button.Disable()
             self.recording_thread = threading.Thread(target=send_recording,
-                                                     args=(recording_file, "LongRecordPy", self.text_ctrl))
+                                                     args=(
+                                                         recording_file, "LongRecordPy", self.text_ctrl,
+                                                         self.error_text))
             self.recording_thread.start()
 
     def on_stop(self, event):
