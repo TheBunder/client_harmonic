@@ -83,6 +83,7 @@ class LoginDialog(wx.Dialog):
         global Username
         username = self.username_text.GetValue()
         password = self.password_text.GetValue()
+
         if not (password == "" or username == ""):
             message = "Login~" + username + "~" + password
             to_send = convert_with_length_prefix(message)
@@ -129,7 +130,7 @@ def send_sound(file_path, code, error_text: wx.StaticText):
             file_length = os.stat(file_path).st_size
             with open(file_path, "rb") as f:
                 while current < file_length:
-                    size = 40000
+                    size = os.stat(file_path).st_size
                     if file_length - current >= size:
                         current += size
                     else:
@@ -299,7 +300,7 @@ class RecordSound(wx.Dialog):
 
 class Counter(wx.Dialog):
     def __init__(self, parent):
-        super().__init__(parent, title="occurrence counter", size=(400, 200))
+        super().__init__(parent, title="occurrence counter", size=(500, 300))
 
         self.recording = False
         self.recording_thread = None
@@ -314,14 +315,15 @@ class Counter(wx.Dialog):
         self.stop_button = wx.Button(panel, label="Stop")
         self.stop_button.Disable()  # Initially disable stop button
 
-        self.text_ctrl = wx.StaticText(panel, label="Number of occurrences: 0", pos=(10, 10), style=wx.ST_NO_AUTORESIZE)
+        self.cnt_text = wx.StaticText(panel, label="Number of occurrences: 0", pos=(10, 10), style=wx.ST_NO_AUTORESIZE)
+        self.cnt_text.SetMinSize((200, -1))  # Set minimum width, adjust height as needed
         self.error_text = wx.StaticText(self, label="", pos=(10, 10), style=wx.ST_NO_AUTORESIZE)
         self.error_text.SetForegroundColour((255, 0, 0))  # set text color
         self.error_text.SetMinSize((200, -1))  # Set minimum width, adjust height as needed
 
         panel_sizer.Add(self.record_button, 0, wx.ALL | wx.CENTER, 10)
         panel_sizer.Add(self.stop_button, 0, wx.ALL | wx.CENTER, 10)
-        panel_sizer.Add(self.text_ctrl, 0, wx.ALL | wx.CENTER, 10)
+        panel_sizer.Add(self.cnt_text, 0, wx.ALL | wx.CENTER, 10)
         main_sizer.Add(self.error_text, 0, wx.ALL | wx.CENTER, 10)
 
         panel.SetSizer(panel_sizer)
@@ -343,7 +345,7 @@ class Counter(wx.Dialog):
             self.record_button.Disable()
             self.recording_thread = threading.Thread(target=send_recording,
                                                      args=(
-                                                         recording_file, "LongRecordPy", self.text_ctrl,
+                                                         recording_file, "LongRecordPy", self.cnt_text,
                                                          self.error_text))
             self.recording_thread.start()
 
