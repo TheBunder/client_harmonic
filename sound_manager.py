@@ -17,6 +17,11 @@ def stop_record():
     rec = False
 
 
+def start_record():
+    global rec
+    rec = True
+
+
 def record():
     """
     Record from the microphone and

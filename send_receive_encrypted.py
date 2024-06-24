@@ -16,7 +16,6 @@ iv_parms = ''
 aes_key = ''
 
 
-
 def send_encrypted(sock, ba):
     cipher = AES.new(aes_key, AES.MODE_CBC, iv_parms)
     ba = pad(ba, AES.block_size)
@@ -55,4 +54,3 @@ def set_encryption(sock):
         iv_parms = cipherEncryption.IV  # AES.new(secret_key, AES.MODE_CBC, aes_key.IV).IV
 
         is_encrypted = True
-

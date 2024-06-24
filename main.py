@@ -30,6 +30,8 @@ occurrences = 0
 
 MINIMUM_PASSWORD_LENGTH = 6
 
+close = False
+
 
 def stop_record():
     global rec
@@ -79,6 +81,9 @@ class LoginDialog(wx.Dialog):
 
         self.ShowModal()
 
+        if close:
+            self.Close()
+
     def on_login(self, event):
         global Username
         username = self.username_text.GetValue()
@@ -97,7 +102,7 @@ class LoginDialog(wx.Dialog):
                 post_login_dialog = RecordSound(self)
                 post_login_dialog.ShowModal()
                 post_login_dialog.Destroy()
-                self.Show()
+                self.Close()
             else:
                 wx.MessageBox("Invalid username and password", "Login Information", wx.OK | wx.ICON_INFORMATION)
         else:
@@ -341,6 +346,7 @@ class Counter(wx.Dialog):
             self.error_text.SetLabel("")
             self.recording = True
             start_record()
+            sound_manager.start_record()
             self.stop_button.Enable()
             self.record_button.Disable()
             self.recording_thread = threading.Thread(target=send_recording,
