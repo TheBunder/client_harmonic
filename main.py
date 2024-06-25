@@ -30,8 +30,6 @@ occurrences = 0
 
 MINIMUM_PASSWORD_LENGTH = 6
 
-close = False
-
 
 def stop_record():
     global rec
@@ -81,9 +79,6 @@ class LoginDialog(wx.Dialog):
 
         self.ShowModal()
 
-        if close:
-            self.Close()
-
     def on_login(self, event):
         global Username
         username = self.username_text.GetValue()
@@ -102,7 +97,7 @@ class LoginDialog(wx.Dialog):
                 post_login_dialog = RecordSound(self)
                 post_login_dialog.ShowModal()
                 post_login_dialog.Destroy()
-                self.Close()
+                self.Destroy()
             else:
                 wx.MessageBox("Invalid username and password", "Login Information", wx.OK | wx.ICON_INFORMATION)
         else:
@@ -144,6 +139,8 @@ def send_sound(file_path, code, error_text: wx.StaticText):
                     message = send_sound_(code, current, file_length, f.read(size))
                     if "Number" in message:
                         occurrences += int(message.split(" ")[3])
+                    if "Error" in message:
+                        error_text.SetLabel(message)
         except:
             error_text.SetLabel("Error happened when tried to send the sound")
     else:
@@ -155,10 +152,13 @@ def save_sound(file_path, sound_name, error_text: wx.StaticText):
 
 
 def send_recording(file_path, code, occurrences_text: wx.StaticText, error_text: wx.StaticText):
-    while (rec):
+    while rec:
         sound_manager.record_to_file(file_path)
         send_sound(file_path, code, error_text)
-        occurrences_text.SetLabel("Number of occurrences: " + str(occurrences))
+        if occurrences < 1000:
+            occurrences_text.SetLabel("Number of occurrences: " + str(occurrences))
+        else:
+            occurrences_text.SetLabel("Number of occurrences: +999")
 
 
 def send_selection(sound_name):
@@ -280,11 +280,9 @@ class RecordSound(wx.Dialog):
         self.recorded = True
 
     def on_next(self, event):
-        is_ok = self.recorded  # set to True if the user recorded a sound
         if self.spinner.GetStringSelection() == "default":
             if self.recorded:
                 send_sound(target_sound_file, "ShortRecordSave", self.error_text)
-                is_ok = os.path.exists(target_sound_file)
                 self.Layout()
             else:
                 wx.MessageBox("Please record a sound before moving to the next screen", "Info",
@@ -295,7 +293,7 @@ class RecordSound(wx.Dialog):
             except:
                 wx.MessageBox("Error happened when tried to send selection", "Info",
                               wx.OK | wx.ICON_INFORMATION)
-        if is_ok:
+        if self.recorded and self.error_text.GetLabel() == "":
             self.Hide()
             counter = Counter(self)
             counter.ShowModal()
@@ -409,7 +407,7 @@ class SignupDialog(wx.Dialog):
             if re.search("[^0-9a-zA-Z]+", username) == username:
                 if password == repassword:
                     if len(password) >= MINIMUM_PASSWORD_LENGTH:
-                        message = signUp(username, password)
+                        message = sign_up(username, password)
                         if message == "Sign up successful":
                             wx.MessageBox("Registered successfully", "Login Information", wx.OK | wx.ICON_INFORMATION)
                         elif message == "Username is in use":
@@ -432,7 +430,7 @@ class SignupDialog(wx.Dialog):
                           wx.OK | wx.ICON_INFORMATION)
 
 
-def signUp(username, password):
+def sign_up(username, password):
     message = "SignUp~" + username + "~" + password
     to_send = convert_with_length_prefix(message)
     send_receive_encrypted.send_encrypted(server_socket, to_send)
@@ -459,6 +457,24 @@ def convert_with_length_prefix(text):
     return prefixed_bytes
 
 
+class ConnectionErrorWindow(wx.Frame):
+    def __init__(self):
+        super().__init__(None, title="Connection Error")
+        self.SetSize((600, 200))
+        self.CenterOnScreen()
+        self.SetBackgroundColour("white")
+
+        # Create a text label
+        self.error_text = wx.StaticText(self, label="Connection refused!", style=wx.ALIGN_CENTER)
+        self.error_text.SetFont(wx.Font(24, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
+        self.error_text.SetForegroundColour("red")
+
+        # Add the text label to the sizer
+        sizer = wx.BoxSizer(wx.VERTICAL)
+        sizer.Add(self.error_text, 1, wx.EXPAND | wx.ALL, 10)
+        self.SetSizer(sizer)
+
+
 def main():
     global server_socket
     try:
@@ -470,9 +486,13 @@ def main():
 
             app = wx.App()
             LoginDialog()
-            app.MainLoop()
+            app.ExitMainLoop()  # Exit after dialog closes
     except (ConnectionRefusedError, OSError) as e:
         print("Connection refused")
+        app = wx.App()
+        window = ConnectionErrorWindow()
+        window.Show()
+        app.MainLoop()
 
 
 if __name__ == '__main__':
