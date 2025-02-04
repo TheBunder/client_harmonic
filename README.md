@@ -1,6 +1,6 @@
 # Harmonic - PC Client (Python)
 
-This repository contains the Python-based client-side code for Harmonic, an application designed to automate the counting of short sound segments within longer recordings. Harmonic simplifies the process of repetitive sound counting, freeing users from manual effort and allowing them to focus on more important tasks. A complete description of the project architecture and overall functionality, including the server-side components, can be found in the server-side repository(https://github.com/TheBunder/HarmonicServer).
+This repository contains the Python-based client-side code for Harmonic, an application designed to automate the counting of short sound segments within longer recordings. Harmonic simplifies the process of repetitive sound counting, freeing users from manual effort and allowing them to focus on more important tasks. A complete description of the project architecture and overall functionality, including the server-side components, can be found in the [server-side](https://github.com/TheBunder/HarmonicServer) repository.
 
 Harmonic addresses the common need to count recurring sounds within a longer audio clip. For example, a user can record the sound of a single keyboard key press and then record a longer session of typing. Harmonic will then automatically count how many times that key press sound occurred in the recording. This automation has broad applications, from enhancing sports performance (e.g., counting punches or jump rope repetitions) to research and data analysis.
 
